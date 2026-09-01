@@ -4,7 +4,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$testScript = Join-Path $projectRoot 'tests\test_simple_todo.py'
+$testScripts = @(
+    (Join-Path $projectRoot 'tests\test_simple_todo.py'),
+    (Join-Path $projectRoot 'tests\test_history_selection.py')
+)
 
 if ([string]::IsNullOrWhiteSpace($BlenderExe)) {
     $blenderCommand = Get-Command blender -ErrorAction SilentlyContinue
@@ -20,7 +23,9 @@ if (
     throw 'Blender was not found. Pass -BlenderExe or set BLENDER_EXE.'
 }
 
-& $BlenderExe --background --factory-startup --python $testScript
-if ($LASTEXITCODE -ne 0) {
-    throw "ToDo List tests failed with exit code $LASTEXITCODE."
+foreach ($testScript in $testScripts) {
+    & $BlenderExe --background --factory-startup --python $testScript
+    if ($LASTEXITCODE -ne 0) {
+        throw "ToDo List test failed: $testScript (exit code $LASTEXITCODE)."
+    }
 }
