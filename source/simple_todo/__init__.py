@@ -7,6 +7,7 @@ easy to follow. Section headers separate each responsibility.
 """
 
 import bpy
+from bpy.app.handlers import persistent
 from bpy.props import (
     BoolProperty,
     CollectionProperty,
@@ -111,9 +112,16 @@ def get_storage(create=False):
 
 
 def active_item_is_valid(storage, window_manager):
-    """Return whether the active index points to an existing ToDo."""
+    """Return whether the active index points to a visible ToDo."""
     index = window_manager.simple_todo_active_index
-    return storage is not None and 0 <= index < len(storage.simple_todo_items)
+    if storage is None or not 0 <= index < len(storage.simple_todo_items):
+        return False
+
+    return item_is_visible(
+        storage.simple_todo_items[index],
+        window_manager.simple_todo_display,
+        window_manager.simple_todo_search_text,
+    )
 
 
 def item_is_visible(item, display, search_text=""):
@@ -135,7 +143,7 @@ def visible_indices(items, display, search_text=""):
 
 
 def ensure_active_item_visible(window_manager, storage=None):
-    """Move selection to a visible item after filters change."""
+    """Move selection to a visible item after filters or history change."""
     if storage is None:
         storage = get_storage()
     if storage is None:
@@ -203,6 +211,15 @@ def tag_todo_panels_for_redraw(window_manager):
         for area in screen.areas:
             if area.type == "VIEW_3D":
                 area.tag_redraw()
+
+
+@persistent
+def on_history_changed(_scene):
+    """Repair non-undoable UI selection after Blender undo or redo."""
+    storage = get_storage()
+    for window_manager in bpy.data.window_managers:
+        ensure_active_item_visible(window_manager, storage)
+        tag_todo_panels_for_redraw(window_manager)
 
 
 # -----------------------------------------------------------------------------
@@ -325,6 +342,9 @@ class SIMPLE_TODO_OT_remove(Operator):
     def execute(self, context):
         storage = get_storage()
         window_manager = context.window_manager
+        if not active_item_is_valid(storage, window_manager):
+            return {"CANCELLED"}
+
         current_index = window_manager.simple_todo_active_index
         storage.simple_todo_items.remove(current_index)
         select_after_removal(window_manager, storage, current_index)
@@ -352,6 +372,9 @@ class SIMPLE_TODO_OT_move(Operator):
     def execute(self, context):
         storage = get_storage()
         window_manager = context.window_manager
+        if not active_item_is_valid(storage, window_manager):
+            return {"CANCELLED"}
+
         current_index = window_manager.simple_todo_active_index
         target_index = find_move_target(
             storage.simple_todo_items,
@@ -577,17 +600,39 @@ def unregister_runtime_properties():
     del bpy.types.Text.simple_todo_items
 
 
+def register_history_handlers():
+    """Repair UI-only selection after persistent data undo and redo."""
+    for handlers in (
+        bpy.app.handlers.undo_post,
+        bpy.app.handlers.redo_post,
+    ):
+        if on_history_changed not in handlers:
+            handlers.append(on_history_changed)
+
+
+def unregister_history_handlers():
+    """Remove history callbacks without disturbing other add-ons."""
+    for handlers in (
+        bpy.app.handlers.redo_post,
+        bpy.app.handlers.undo_post,
+    ):
+        while on_history_changed in handlers:
+            handlers.remove(on_history_changed)
+
+
 def register():
-    """Register translations, classes, and runtime properties."""
+    """Register translations, classes, runtime properties, and handlers."""
     bpy.app.translations.register(__name__, TRANSLATIONS)
 
     for cls in CLASSES:
         bpy.utils.register_class(cls)
     register_runtime_properties()
+    register_history_handlers()
 
 
 def unregister():
     """Unregister in reverse order without leaving Blender definitions."""
+    unregister_history_handlers()
     unregister_runtime_properties()
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)
