@@ -1,0 +1,12 @@
+schema_version = "1.0.0"
+
+id = "todo_list"
+version = "1.0.0"
+name = "ToDo List"
+tagline = "Keep a clear task list in each blend file"
+maintainer = "33linn"
+type = "add-on"
+
+tags = ["User Interface"]
+blender_version_min = "5.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
